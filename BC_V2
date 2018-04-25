@@ -1,0 +1,104 @@
+import rhinoscriptsyntax as rs 
+import random as rd
+import operator
+
+Gen0 = rs.GetObject("Generatrice courbe",4)
+Gen1 = rs.GetObject("Generatrice droite",4)
+
+def Create_Axis_Surface(Generatrice_Courbe,Generatrice_Droite) :
+    
+    if rs.CurveDirectionsMatch(Generatrice_Courbe, Generatrice_Droite):
+
+        print "Curves are in the same direction"
+
+    else:
+
+        rs.ReverseCurve(Generatrice_Courbe)
+    
+    Generatrices = [Generatrice_Courbe,Generatrice_Droite]
+    srf = rs.AddLoftSrf(Generatrices, loft_type = 3)
+    
+    projection_plane = rs.AddPlaneSurface(rs.WorldXYPlane(), 150, 150)
+    Axe = rs.ProjectCurveToSurface(Generatrice_Droite, projection_plane, (0,0,-1))
+    rs.DeleteObject(projection_plane)
+    return srf, Axe
+ 
+def Create_Plan_Bats(int_crv, Axe):
+    origin = rs.CurveStartPoint (int_crv)
+    fin = rs.VectorCreate(rs.CurveEndPoint (int_crv),rs.CurveStartPoint (int_crv))
+    normal = rs.VectorCreate(rs.CurveEndPoint (Axe),rs.CurveStartPoint (Axe))
+    xaxis = rs.VectorRotate(normal, - 90 , fin)
+    perpframe3 = rs.PlaneFromNormal(origin, xaxis, normal)
+    return perpframe3
+
+Axe_Srf = Create_Axis_Surface(Gen0, Gen1)
+
+srf = Axe_Srf[0]
+Axe = Axe_Srf[1]
+
+# Creation dimension lineaire aleatoire
+x = []
+y = []
+z = []
+
+for i in range (0,200):
+     x.append(rd.uniform(4,7))
+     y.append(rd.uniform(3,5))
+     z.append(rd.uniform(40,90))
+
+
+# Intersection des perp frame de l'axe avec la surface
+
+Dom_Axe = []
+int_length = []
+bat_Util = []
+bat_Util_order = []
+diff = []
+
+for j in range(len(z)):
+    bat_Util.append(0)
+
+DomAxe = rs.CurveDomain(Axe)
+AxeLength = rs.CurveLength(Axe)
+cutplane = rs.CurvePerpFrame(Axe, DomAxe[0])
+Moove = 0
+print DomAxe
+
+while Moove<AxeLength:
+    cutplane2 = rs.CurvePerpFrame(Axe,DomAxe[0] + Moove)
+    if cutplane2:
+        planesrf = rs.AddPlaneSurface(cutplane2,500,500)
+        int_crv = rs.IntersectBreps( srf, planesrf)
+        rs.DeleteObject(planesrf)
+        int_length = rs.CurveLength(int_crv)
+        
+        #Best Candidate
+        
+        for k in range(len(z)):
+            ind = 0
+            IsMatching = False
+            if bat_Util[k]==0:
+                diff.append(z[k] - int_length)
+            elif bat_Util[k]==1:
+                diff.append(1000)
+        podiff = [1000 if i < 0 else i for i in diff]
+        del diff[:]
+        Bdiff_index, Bdiff = min(enumerate(podiff), key=operator.itemgetter(1))
+        bat_Util[Bdiff_index] = 1
+        bat_Util_order.append(Bdiff_index)
+        if Bdiff > 999:
+            break
+        perpframe = Create_Plan_Bats(int_crv, Axe)
+        
+        rect = rs.AddRectangle (perpframe, y[Bdiff_index], z[Bdiff_index] )
+        epaisseur = -x[Bdiff_index]
+        path = rs.AddLine([0,0,0], [0,0,epaisseur])
+        extrusion = rs.ExtrudeCurve( rect, path )
+        rs.DeleteObject(rect)
+        rs.DeleteObjects(path)
+        rs.DeleteObject(int_crv)
+        rs.CapPlanarHoles(extrusion)
+        Moove += y[Bdiff_index]
+
+rs.DeleteObject(srf)
+rs.DeleteObject(Axe)
